@@ -94,7 +94,7 @@ private class MessageRepeater(loader: ClassLoader, members: Map<String, ObfsInfo
         if (group == null) messages.add(message)
         else {
             @Suppress("UNCHECKED_CAST")
-            messages.addAll(group.getObj("messages") as Collection<Any>)
+            messages.addAll(fields.getValue("groupMessages").get(group) as Collection<Any>)
             messages.sortBy { it.call("getId") as Int }
         }
         return MessageMenuAction(click = click@ { view ->
@@ -184,7 +184,7 @@ private class MessageRepeater(loader: ClassLoader, members: Map<String, ObfsInfo
     }
 }
 
-private val repeatFields = listOf("dialog", "thread", "suggestion", "group", "currentChat", "input", "restrictionOverlay",
+private val repeatFields = listOf("dialog", "thread", "suggestion", "group", "groupMessages", "currentChat", "input", "restrictionOverlay",
     "searchVisible", "channelButtons", "currentUser", "forumTopic")
 private val repeatKeys = repeatFields + listOf("forward", "slowMode", "monoPeer", "chatArgs",
     "sendSticker", "sendText", "textParams", "chatNoForwards", "userNoForwards", "forumReplyRequired")
@@ -223,9 +223,17 @@ internal fun findRepeatMessage(bridge: DexKitBridge, chat: String, createMenu: S
     // processSelectedOption first reads the selected album in its Retry branch;
     // the later GroupedMessages field holds the forwarding selection instead.
     val group = bridge.getMethodData(options)!!.usingFields.first { field ->
-        field.field.className == chat && field.field.type.fields.any { it.typeName == "java.util.ArrayList" } &&
+        field.field.className == chat && field.field.typeName != message && field.field.typeName.startsWith("org.telegram.messenger.") && field.field.type.fields.any { it.typeName == "java.util.ArrayList" } &&
             field.field.type.fields.any { it.typeName == "long" } && field.field.type.fields.any { it.typeName == "boolean" }
     }.field
+    val groupClass = bridge.getClassData(group.typeName)!!
+    val groupMessageCandidates = groupClass.fields.filter { field ->
+        field.typeName == "java.util.ArrayList" && groupClass.methods.any { method ->
+            method.paramTypeNames == listOf("int") && method.returnTypeName == message &&
+                method.usingFields.any { it.field.descriptor == field.descriptor }
+        }
+    }
+    check(groupMessageCandidates.size == 1)
     fun invoked(result: String) = forward.invokes.distinctBy { it.descriptor }.single {
         it.className == chat && it.paramCount == 0 && it.returnTypeName == result
     }.descriptor
@@ -300,6 +308,7 @@ internal fun findRepeatMessage(bridge: DexKitBridge, chat: String, createMenu: S
         "thread" to forwardField(message),
         "suggestion" to bridge.findField { matcher { declaredClass(chat); type(suggestion) } }.single().descriptor,
         "group" to group.descriptor,
+        "groupMessages" to groupMessageCandidates.single().descriptor,
         "currentChat" to bridge.findField { matcher {
             declaredClass(chat); type("org.telegram.tgnet.TLRPC\$Chat"); addReadMethod { descriptor(createMenu) }
         } }.single().descriptor,
