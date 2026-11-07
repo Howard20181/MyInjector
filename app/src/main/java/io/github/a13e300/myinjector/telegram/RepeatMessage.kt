@@ -111,7 +111,7 @@ private class MessageRepeater(loader: ClassLoader, members: Map<String, ObfsInfo
             // destination rather than relying on its global, possibly stale flag.
             val restricted = methods.getValue("chatNoForwards").callOrig(controller, currentChat) as Boolean ||
                 (dialogId > 0 && methods.getValue("userNoForwards").callOrig(controller, dialogId) as Boolean) ||
-                messages.any { it.getObj("messageOwner").getObj("noforwards") == true }
+            messages.any { fields.getValue("messageOwner").get(it).getObj("noforwards") == true }
             if (thread == null && !restricted) {
                 try {
                     // Native forwarding handles slow mode, media restrictions
@@ -138,7 +138,7 @@ private class MessageRepeater(loader: ClassLoader, members: Map<String, ObfsInfo
             val sticker = message.call("isAnyKindOfSticker") == true &&
                 message.call("isAnimatedEmoji") != true && message.call("isDice") != true
             val document = if (sticker) message.call("getDocument") else null
-            val owner = message.getObj("messageOwner")
+            val owner = fields.getValue("messageOwner").get(message)
             val text = owner.getObj("message") as String?
             val sendArgs = methods.getValue("chatArgs").invoke(chat)
             val monoPeer = methods.getValue("monoPeer").invoke(chat) as Long
@@ -184,7 +184,7 @@ private class MessageRepeater(loader: ClassLoader, members: Map<String, ObfsInfo
     }
 }
 
-private val repeatFields = listOf("dialog", "thread", "suggestion", "group", "groupMessages", "currentChat", "input", "restrictionOverlay",
+private val repeatFields = listOf("messageOwner", "dialog", "thread", "suggestion", "group", "groupMessages", "currentChat", "input", "restrictionOverlay",
     "searchVisible", "channelButtons", "currentUser", "forumTopic")
 private val repeatKeys = repeatFields + listOf("forward", "slowMode", "monoPeer", "chatArgs",
     "sendSticker", "sendText", "textParams", "chatNoForwards", "userNoForwards", "forumReplyRequired")
@@ -285,6 +285,7 @@ internal fun findRepeatMessage(bridge: DexKitBridge, chat: String, createMenu: S
             it.invokes.any { method -> method.descriptor == telegramApiMethod(bridge, "org.telegram.messenger.ChatObject", "canManageTopic", "int", "org.telegram.tgnet.TLRPC\$Chat", "org.telegram.tgnet.TLRPC\$TL_forumTopic").descriptor }
     }
     return mapOf(
+        "messageOwner" to telegramApiField(bridge, "org.telegram.messenger.MessageObject", "messageOwner").descriptor,
         "input" to input.descriptor,
         "restrictionOverlay" to overlay.descriptor,
         "searchVisible" to searchVisible.descriptor,
