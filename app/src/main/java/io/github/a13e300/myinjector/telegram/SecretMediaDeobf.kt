@@ -14,7 +14,7 @@ internal fun deobfSaveSecretImage(creator: ObfsTableCreator): Map<String, ObfsIn
     val found by lazy { findSaveSecretImage(creator.bridge, creator.obfsTable.getValue("BaseFragment").className) }
     val fields = setOf("selected", "provider", "dialog", "mergeDialog", "gallery", "gap", "messageOwner")
     return listOf("fill", "messageType", "options", "selected", "open", "instance", "parent", "theme",
-        "provider", "topic", "dialog", "mergeDialog", "gallery", "gap", "switch", "messageOwner").associateWith { key ->
+        "parentActivity", "fileLoader", "provider", "topic", "dialog", "mergeDialog", "gallery", "gap", "switch", "messageOwner").associateWith { key ->
         creator.create("SaveSecretImage.$key") {
             val descriptor = found.getValue(key)
             if (key in fields) {
@@ -81,34 +81,7 @@ private fun secretCode(bridge: DexKitBridge, method: MethodData): SecretCode {
 }
 
 private fun findSaveSecretImage(bridge: DexKitBridge, baseFragment: String): Map<String, String> {
-    val dynamic = runCatching { findSaveSecretImageDynamic(bridge, baseFragment) }
-    if (dynamic.isSuccess) return dynamic.getOrThrow()
-    val error = dynamic.exceptionOrNull()!!
-    // Keep a mapping extracted from the current official APK. This covers
-    // Android DexKit builds that do not expose all synthetic call edges.
-    val fallback = mapOf(
-        "fill" to "Lorg/telegram/ui/an;->B8(Lorg/telegram/messenger/zi;Ljava/util/ArrayList;Ljava/util/ArrayList;Ljava/util/ArrayList;)V",
-        "messageType" to "Lorg/telegram/ui/an;->V8(Lorg/telegram/messenger/zi;)I",
-        "options" to "Lorg/telegram/ui/an;->Va(I)V",
-        "selected" to "Lorg/telegram/ui/an;->s5:Lorg/telegram/messenger/zi;",
-        "open" to "Lorg/telegram/ui/PhotoViewer;->i2(Lorg/telegram/messenger/zi;Lorg/telegram/ui/an;JJJLorg/telegram/ui/dq0;)Z",
-        "instance" to "Lorg/telegram/ui/PhotoViewer;->v1()Lorg/telegram/ui/PhotoViewer;",
-        "parent" to "Lorg/telegram/ui/PhotoViewer;->N2(Landroid/app/Activity;Lorg/telegram/ui/ActionBar/d2;Lorg/telegram/ui/ActionBar/c6;)V",
-        "theme" to "Lorg/telegram/ui/an;->getResourceProvider()Lorg/telegram/ui/ActionBar/c6;",
-        "provider" to "Lorg/telegram/ui/an;->Ya:Lorg/telegram/ui/wk;",
-        "topic" to "Lorg/telegram/ui/an;->b()J",
-        "dialog" to "Lorg/telegram/ui/an;->i6:J",
-        "mergeDialog" to "Lorg/telegram/ui/an;->a7:J",
-        "gallery" to "Lorg/telegram/ui/PhotoViewer;->s0:Lorg/telegram/ui/ActionBar/z0;",
-        "gap" to "Lorg/telegram/ui/PhotoViewer;->t0:Lorg/telegram/ui/ActionBar/d1;",
-        "switch" to "Lorg/telegram/ui/PhotoViewer;->J2(IZZZ)V",
-        "messageOwner" to "Lorg/telegram/messenger/zi;->k:Lorg/telegram/tgnet/TLRPC\$Message;"
-    )
-    val valid = fallback.all { (key, descriptor) ->
-        if (key in setOf("selected", "provider", "dialog", "mergeDialog", "gallery", "gap", "messageOwner")) bridge.getFieldData(descriptor) != null
-        else bridge.getMethodData(descriptor) != null
-    }
-    return if (valid) fallback else throw error
+    return findSaveSecretImageDynamic(bridge, baseFragment)
 }
 
 private fun findSaveSecretImageDynamic(bridge: DexKitBridge, baseFragment: String): Map<String, String> {
@@ -118,6 +91,14 @@ private fun findSaveSecretImageDynamic(bridge: DexKitBridge, baseFragment: Strin
         usingTelegramResource(bridge, "string", "SaveToGallery")
     } }.single()
     val chat = fill.declaredClass!!
+    val base = bridge.getClassData(baseFragment)!!
+    val parentActivity = base.methods.single {
+        !Modifier.isStatic(it.modifiers) && it.paramCount == 0 && it.returnTypeName == "android.app.Activity"
+    }
+    val fileLoader = base.methods.single {
+        !Modifier.isStatic(it.modifiers) && it.paramCount == 0 &&
+            it.returnTypeName == telegramApiClass(bridge, "org.telegram.messenger.FileLoader")
+    }
     val type = fill.invokes.single { it.className == chat.name && it.paramTypeNames == listOf(telegramApiClass(bridge, "org.telegram.messenger.MessageObject")) && it.returnTypeName == "int" }
     val options = chat.findMethod { matcher { paramTypes("int"); returnType("void"); usingEqStrings("tel:", "canSelectTopics", "messagesCount") } }.single()
     val selected = options.usingFields.first().field
@@ -162,7 +143,8 @@ private fun findSaveSecretImageDynamic(bridge: DexKitBridge, baseFragment: Strin
     } }.single()
     return mapOf("fill" to fill.descriptor, "messageType" to type.descriptor, "options" to options.descriptor,
         "selected" to selected.descriptor, "open" to open.descriptor, "instance" to instance.descriptor,
-        "parent" to parent.descriptor, "theme" to theme.descriptor, "provider" to viewerProvider.descriptor,
+        "parent" to parent.descriptor, "theme" to theme.descriptor, "parentActivity" to parentActivity.descriptor,
+        "fileLoader" to fileLoader.descriptor, "provider" to viewerProvider.descriptor,
         "topic" to topic.descriptor, "dialog" to dialog.descriptor, "mergeDialog" to migration.descriptor,
         "gallery" to galleryWrite.field.descriptor, "gap" to gapWrite.field.descriptor, "switch" to switch.descriptor,
         "messageOwner" to telegramApiField(bridge, "org.telegram.messenger.MessageObject", "messageOwner").descriptor)

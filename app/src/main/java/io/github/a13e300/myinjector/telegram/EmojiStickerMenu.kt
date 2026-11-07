@@ -159,36 +159,7 @@ class EmojiStickerMenu : MyDynHook("emojiStickerMenu") {
 }
 
 private fun findEmojiStickerMenu(bridge: DexKitBridge, baseFragment: String): Map<String, String> {
-    val dynamic = runCatching { findEmojiStickerMenuDynamic(bridge, baseFragment) }
-    if (dynamic.isSuccess) return dynamic.getOrThrow()
-    val error = dynamic.exceptionOrNull()!!
-    // The Android DexKit runtime may omit synthetic listener references that
-    // are present in the desktop index. Keep the statically verified mapping
-    // for this APK as a fallback, while retaining dynamic matching first.
-    val fallback = mapOf(
-        "emojiClick" to "Lorg/telegram/ui/Components/s;->h(I)V",
-        "emojiOwner" to "Lorg/telegram/ui/Components/s;->b:Ljava/lang/Object;",
-        "header" to "org.telegram.ui.Components.cu",
-        "emojiOptions" to "Lorg/telegram/ui/Components/cu;->f:Lorg/telegram/ui/ActionBar/r0;",
-        "loader" to "Lorg/telegram/ui/Components/gu;->k1:Lorg/telegram/ui/Components/st;",
-        "sets" to "Lorg/telegram/ui/Components/eu;->b:Ljava/util/ArrayList;",
-        "emojiFragment" to "Lorg/telegram/ui/Components/gu;->i1:Lorg/telegram/ui/ActionBar/d2;",
-        "stickerClick" to "Lorg/telegram/ui/Components/gv0;->h(I)V",
-        "stickerOwner" to "Lorg/telegram/ui/Components/gv0;->a:Lorg/telegram/ui/Components/wv0;",
-        "stickerInit" to "Lorg/telegram/ui/Components/wv0;->P0(Landroid/content/Context;)V",
-        "stickerOptions" to "Lorg/telegram/ui/Components/wv0;->n1:Lorg/telegram/ui/ActionBar/r0;",
-        "stickerSet" to "Lorg/telegram/ui/Components/wv0;->I1:Lorg/telegram/tgnet/TLRPC\$TL_messages_stickerSet;",
-        "stickerFragment" to "Lorg/telegram/ui/Components/wv0;->B1:Lorg/telegram/ui/ActionBar/d2;",
-        "addText" to "Lorg/telegram/ui/ActionBar/r0;->e(IILjava/lang/CharSequence;)Lorg/telegram/ui/ActionBar/z0;"
-    )
-    val valid = fallback.all { (key, descriptor) ->
-        when {
-            key == "header" -> bridge.getClassData(descriptor) != null
-            key.endsWith("Owner") || key in listOf("emojiOptions", "loader", "sets", "emojiFragment", "stickerOptions", "stickerSet", "stickerFragment") -> bridge.getFieldData(descriptor) != null
-            else -> bridge.getMethodData(descriptor) != null
-        }
-    }
-    return if (valid) fallback else throw error
+    return findEmojiStickerMenuDynamic(bridge, baseFragment)
 }
 
 private fun findEmojiStickerMenuDynamic(bridge: DexKitBridge, baseFragment: String): Map<String, String> {
@@ -215,15 +186,18 @@ private fun findEmojiStickerMenuDynamic(bridge: DexKitBridge, baseFragment: Stri
             it.typeName == owner || it.typeName == "java.lang.Object"
         }.descriptor
     }
-    val initializers = bridge.findMethod { matcher {
-        usingTelegramResource(bridge, "string", "StickersShare")
-        usingTelegramResource(bridge, "string", "CopyLink")
-    } }
-    val header = initializers.single { it.isConstructor && it.declaredClass!!.fields.any { f -> f.typeName == emojiClass } }
-    val init = initializers.single { it.className == stickerClass }
+    val header = bridge.findMethod { matcher {
+        paramTypes(emojiClass, "android.content.Context", "boolean")
+        returnType("void")
+    } }.single { it.isConstructor && it.declaredClass!!.fields.any { f -> f.typeName == emojiClass } }
+    val init = bridge.getClassData(stickerClass)!!.methods.single {
+        it.paramTypeNames == listOf("android.content.Context") && it.returnTypeName == "void"
+    }
     val addMenu = header.invokes.distinctBy { it.descriptor }.single { it.paramTypeNames.take(2) == listOf("int", "int") && it.paramTypeNames.lastOrNull() in listOf("java.lang.String", "java.lang.CharSequence") && it.paramCount == 3 }
-    val addText = bridge.findMethod { matcher { declaredClass(addMenu.className); paramTypes("int", "java.lang.CharSequence") } }.singleOrNull() ?: addMenu
-    fun field(c: String, type: String) = bridge.findField { matcher { declaredClass(c); type(type) } }.single()
+    val addText = bridge.getClassData(addMenu.className)!!.methods.singleOrNull {
+        it.paramTypeNames == listOf("int", "java.lang.CharSequence")
+    } ?: addMenu
+    fun field(c: String, type: String) = bridge.getClassData(c)!!.fields.single { it.typeName == type }
     return mapOf(
         "emojiClick" to emoji.descriptor, "emojiOwner" to capturedOwner(emoji, emojiClass), "header" to header.className,
         "emojiOptions" to field(header.className, addMenu.className).descriptor,
