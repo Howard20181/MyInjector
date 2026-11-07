@@ -34,6 +34,7 @@ class SaveSecretImage : MyDynHook("saveSecretMedia") {
         val mergeDialogField = field("mergeDialog")
         val galleryField = field("gallery")
         val gapField = field("gap")
+        val messageOwnerField = field("messageOwner")
         val messageType = method("messageType")
         val getInstance = method("instance")
         val setParent = method("parent")
@@ -100,7 +101,7 @@ class SaveSecretImage : MyDynHook("saveSecretMedia") {
             val topicId = if (hasType) getTopic.invoke(ca) as Long else 0L
             val provider = providerField.get(ca)
             val loader = ca.call("getFileLoader") ?: return@hookBefore
-            val owner = message.getObj("messageOwner")
+            val owner = messageOwnerField.get(message)
             thread {
                 val success = dumpEncryptedFile(loader, owner)
                 context.runOnUiThread {

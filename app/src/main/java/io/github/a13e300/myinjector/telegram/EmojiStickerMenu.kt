@@ -159,6 +159,39 @@ class EmojiStickerMenu : MyDynHook("emojiStickerMenu") {
 }
 
 private fun findEmojiStickerMenu(bridge: DexKitBridge, baseFragment: String): Map<String, String> {
+    val dynamic = runCatching { findEmojiStickerMenuDynamic(bridge, baseFragment) }
+    if (dynamic.isSuccess) return dynamic.getOrThrow()
+    val error = dynamic.exceptionOrNull()!!
+    // The Android DexKit runtime may omit synthetic listener references that
+    // are present in the desktop index. Keep the statically verified mapping
+    // for this APK as a fallback, while retaining dynamic matching first.
+    val fallback = mapOf(
+        "emojiClick" to "Lorg/telegram/ui/Components/s;->h(I)V",
+        "emojiOwner" to "Lorg/telegram/ui/Components/s;->b:Ljava/lang/Object;",
+        "header" to "org.telegram.ui.Components.cu",
+        "emojiOptions" to "Lorg/telegram/ui/Components/cu;->f:Lorg/telegram/ui/ActionBar/r0;",
+        "loader" to "Lorg/telegram/ui/Components/gu;->k1:Lorg/telegram/ui/Components/st;",
+        "sets" to "Lorg/telegram/ui/Components/eu;->b:Ljava/util/ArrayList;",
+        "emojiFragment" to "Lorg/telegram/ui/Components/gu;->i1:Lorg/telegram/ui/ActionBar/d2;",
+        "stickerClick" to "Lorg/telegram/ui/Components/gv0;->h(I)V",
+        "stickerOwner" to "Lorg/telegram/ui/Components/gv0;->a:Lorg/telegram/ui/Components/wv0;",
+        "stickerInit" to "Lorg/telegram/ui/Components/wv0;->P0(Landroid/content/Context;)V",
+        "stickerOptions" to "Lorg/telegram/ui/Components/wv0;->n1:Lorg/telegram/ui/ActionBar/r0;",
+        "stickerSet" to "Lorg/telegram/ui/Components/wv0;->I1:Lorg/telegram/tgnet/TLRPC\$TL_messages_stickerSet;",
+        "stickerFragment" to "Lorg/telegram/ui/Components/wv0;->B1:Lorg/telegram/ui/ActionBar/d2;",
+        "addText" to "Lorg/telegram/ui/ActionBar/r0;->e(IILjava/lang/CharSequence;)Lorg/telegram/ui/ActionBar/z0;"
+    )
+    val valid = fallback.all { (key, descriptor) ->
+        when {
+            key == "header" -> bridge.getClassData(descriptor) != null
+            key.endsWith("Owner") || key in listOf("emojiOptions", "loader", "sets", "emojiFragment", "stickerOptions", "stickerSet", "stickerFragment") -> bridge.getFieldData(descriptor) != null
+            else -> bridge.getMethodData(descriptor) != null
+        }
+    }
+    return if (valid) fallback else throw error
+}
+
+private fun findEmojiStickerMenuDynamic(bridge: DexKitBridge, baseFragment: String): Map<String, String> {
     val handlers = bridge.findMethod { matcher {
         returnType("void"); usingStrings("/addemoji/", "/addstickers/")
     } }.filter { it.paramTypeNames == listOf("int") || (Modifier.isStatic(it.modifiers) && it.paramTypeNames == listOf(it.className, "int")) }
