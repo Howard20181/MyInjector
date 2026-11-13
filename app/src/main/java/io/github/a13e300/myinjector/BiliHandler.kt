@@ -13,6 +13,11 @@ import io.github.a13e300.myinjector.arch.hookAllBefore
 import io.github.a13e300.myinjector.arch.hookAfter
 import io.github.a13e300.myinjector.arch.hookBefore
 import io.github.a13e300.myinjector.arch.hookConstant
+import io.github.a13e300.myinjector.arch.hook
+import io.github.a13e300.myinjector.bili.BiliCommentLink
+import io.github.a13e300.myinjector.bili.BiliCommentRoute
+import io.github.a13e300.myinjector.bili.biliCommentLinkMembers
+import io.github.a13e300.myinjector.bili.biliCommentRouteMembers
 import io.github.a13e300.myinjector.bili.BiliNewShare
 import io.github.a13e300.myinjector.bili.biliNewShareMembers
 import io.github.a13e300.myinjector.bili.locateBiliActivityMetaField
@@ -105,6 +110,39 @@ class BiliHandler : IHook() {
             logD("bili new share framework forced: ${enabled.descriptor}")
             logD("bili new share local copy installed: ${share.engine}")
         }.onFailure { logE("hookNewShare", it) }
+    }
+
+    private fun hookCommentLink(creator: ObfsTableCreator) {
+        if (findClassOrNull("kntr.common.comment.page.ui.CommentMoreMenuKt") == null) return
+        runCatching {
+            val link = BiliCommentLink(classLoader, biliCommentLinkMembers(creator))
+            hooks += link.menu.hook(before = { param ->
+                runCatching { link.enter(param.args) }.onFailure { logE("bili comment link data", it) }
+            }, after = { link.leave() })
+            link.renderers.forEach { renderer ->
+                val listIndex = renderer.parameterTypes.indexOf(List::class.java)
+                hooks += renderer.hookBefore { param ->
+                    runCatching { link.addEntry(param.args, listIndex) }
+                        .onFailure { logE("bili comment link menu", it) }
+                }
+            }
+            logD("bili comment copy link installed: ${link.menu}")
+        }.onFailure { logE("hookCommentLink", it) }
+    }
+
+    private fun hookCommentLinkInVideo(creator: ObfsTableCreator) {
+        runCatching {
+            val route = BiliCommentRoute(classLoader, biliCommentRouteMembers(creator))
+            hooks += route.legacy.hookBefore { param ->
+                runCatching { param.args[0] = route.wrapLegacy(param.args[0]!!) }
+                    .onFailure { logE("bili comment video route (legacy)", it) }
+            }
+            hooks += route.theseus2.hookBefore { param ->
+                runCatching { param.args[0] = route.wrapTheseus2(param.args[0]!!) }
+                    .onFailure { logE("bili comment video route (Theseus2)", it) }
+            }
+            logD("bili comment links stay in video: ${route.legacy}, ${route.theseus2}")
+        }.onFailure { logE("hookCommentLinkInVideo", it) }
     }
 
     private fun hookPauseAd(creator: ObfsTableCreator) {
@@ -220,6 +258,8 @@ class BiliHandler : IHook() {
         ObfsTableCreator("bili", 2, appInfo = loadPackageParam.appInfo).use { creator ->
             hookShare(creator)
             hookNewShare(creator)
+            hookCommentLink(creator)
+            hookCommentLinkInVideo(creator)
             hookAd(creator)
             hookPauseAd(creator)
             hookFreeDataGuide(creator)
