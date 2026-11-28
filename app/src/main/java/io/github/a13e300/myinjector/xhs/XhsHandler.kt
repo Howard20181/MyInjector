@@ -58,6 +58,10 @@ data class XhsHookConfig(
     val openStickerAsImage: Boolean = true,
     val betterShare: Boolean = true,
     val extractVideoLink: Boolean = true,
+    val disableDoubleTapLike: Boolean = true,
+    val keepHomeCache: Boolean = true,
+    val homeTabScrollFirst: Boolean = true,
+    val hideHomeAds: Boolean = true,
 ) {
     companion object {
         fun readFromJson(obj: JSONObject): XhsHookConfig {
@@ -67,6 +71,10 @@ data class XhsHookConfig(
                 openStickerAsImage = obj.boolOrDefault("openStickerAsImage", true),
                 betterShare = obj.boolOrDefault("betterShare", true),
                 extractVideoLink = obj.boolOrDefault("extractVideoLink", true),
+                disableDoubleTapLike = obj.boolOrDefault("disableDoubleTapLike", true),
+                keepHomeCache = obj.boolOrDefault("keepHomeCache", true),
+                homeTabScrollFirst = obj.boolOrDefault("homeTabScrollFirst", true),
+                hideHomeAds = obj.boolOrDefault("hideHomeAds", true),
             )
         }
     }
@@ -77,6 +85,10 @@ data class XhsHookConfig(
         obj.put("openStickerAsImage", openStickerAsImage)
         obj.put("betterShare", betterShare)
         obj.put("extractVideoLink", extractVideoLink)
+        obj.put("disableDoubleTapLike", disableDoubleTapLike)
+        obj.put("keepHomeCache", keepHomeCache)
+        obj.put("homeTabScrollFirst", homeTabScrollFirst)
+        obj.put("hideHomeAds", hideHomeAds)
     }
 }
 
@@ -113,6 +125,22 @@ class XhsSettingsDialog(ctx: Context) : SettingDialog(ctx) {
 
             "extractVideoLink" -> {
                 settings.copy(extractVideoLink = newValue as Boolean)
+            }
+
+            "disableDoubleTapLike" -> {
+                settings.copy(disableDoubleTapLike = newValue as Boolean)
+            }
+
+            "keepHomeCache" -> {
+                settings.copy(keepHomeCache = newValue as Boolean)
+            }
+
+            "homeTabScrollFirst" -> {
+                settings.copy(homeTabScrollFirst = newValue as Boolean)
+            }
+
+            "hideHomeAds" -> {
+                settings.copy(hideHomeAds = newValue as Boolean)
             }
 
             else -> return false
@@ -223,6 +251,26 @@ class XhsSettingsDialog(ctx: Context) : SettingDialog(ctx) {
                 (setting as ToggleSetting).isChecked =
                     XhsHandler.settings.extractVideoLink
             }
+
+            "disableDoubleTapLike" -> {
+                (setting as ToggleSetting).isChecked =
+                    XhsHandler.settings.disableDoubleTapLike
+            }
+
+            "keepHomeCache" -> {
+                (setting as ToggleSetting).isChecked =
+                    XhsHandler.settings.keepHomeCache
+            }
+
+            "homeTabScrollFirst" -> {
+                (setting as ToggleSetting).isChecked =
+                    XhsHandler.settings.homeTabScrollFirst
+            }
+
+            "hideHomeAds" -> {
+                (setting as ToggleSetting).isChecked =
+                    XhsHandler.settings.hideHomeAds
+            }
         }
 
         if (setting.key in XhsHandler.hookErrors) {
@@ -242,7 +290,26 @@ class XhsSettingsDialog(ctx: Context) : SettingDialog(ctx) {
             toggle("保存原图", "saveOriginalImage")
             toggle("移除保存图片限制", "forceSaveImage")
             toggle("用打开图片方式打开表情", "openStickerAsImage")
-            toggle("增强分享", "betterShare")
+            toggle("增强分享", "betterShare", summary = "评论复制链接使用长链接，长按可连同全文复制，支持 HTML")
+            toggle(
+                "屏蔽首页广告", "hideHomeAds",
+                summary = "过滤首页推荐中的广告笔记和广告卡片，包含缓存内容\n当前启动过滤了 ${HideHomeAds.filteredCount} 条广告"
+            )
+            toggle(
+                "冷启动保留首页缓存",
+                "keepHomeCache",
+                summary = "首页推荐有缓存时不自动刷新，仍可手动刷新和加载更多"
+            )
+            toggle(
+                "禁用双击爱心",
+                "disableDoubleTapLike",
+                summary = "禁止双击笔记图片、正文或视频触发点赞，保留手动点击爱心"
+            )
+            toggle(
+                "首页按钮先回顶",
+                "homeTabScrollFirst",
+                summary = "推荐页未到顶部时点底栏首页只回顶，已在顶部时刷新"
+            )
             toggle(
                 "提取视频链接",
                 "extractVideoLink",
@@ -401,7 +468,12 @@ object XhsHandler : DynHookManager<XhsHookConfig>() {
         subHook(OpenStickerAsImage())
         subHook(ForceSaveImage())
         subHook(BetterShare())
+        subHook(BetterCommentShare())
         subHook(ExtractVideoLink())
+        subHook(DisableDoubleTapLike())
+        subHook(KeepHomeCache())
+        subHook(HomeTabScrollFirst())
+        subHook(HideHomeAds())
 
         _creator?.let {
             it.persist()
